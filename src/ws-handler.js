@@ -80,8 +80,43 @@ export function handleWsConnection(req, socket, head, ws) {
  * @param {string} subdomain - Assigned subdomain
  */
 function setupWsEventHandlers(ws, subdomain) {
-  ws.on("close", () => {
-    cleanupTunnel(subdomain, "client disconnected");
+  ws.on("close", (code, reason) => {
+    const reasonText = reason ? reason.toString() : 'No reason provided';
+
+    // Log different close codes with appropriate levels
+    switch (code) {
+      case 1000:
+        console.log(`🔌 Connection closed normally: ${code} - ${reasonText}`);
+        break;
+      case 1001:
+        console.log(`🔌 Connection closed: Going away - ${reasonText}`);
+        break;
+      case 1002:
+        console.log(`🔌 Connection closed: Protocol error - ${reasonText}`);
+        break;
+      case 1003:
+        console.log(`🔌 Connection closed: Unsupported data - ${reasonText}`);
+        break;
+      case 1006:
+        console.error(`🔌 Abnormal closure (${code}) - ${reasonText}`);
+        console.error(`💡 Possible causes:`);
+        console.error(`   - Network timeout or connectivity issue`);
+        console.error(`   - Reverse proxy terminated connection`);
+        console.error(`   - Firewall blocking WebSocket traffic`);
+        console.error(`   - Client crashed or network changed`);
+        console.error(`   - Server overloaded`);
+        break;
+      case 1008:
+        console.log(`🔌 Connection closed: Policy violation - ${reasonText}`);
+        break;
+      case 1011:
+        console.error(`🔌 Connection closed: Server error - ${reasonText}`);
+        break;
+      default:
+        console.log(`🔌 Connection closed: ${code} - ${reasonText}`);
+    }
+
+    cleanupTunnel(subdomain, `client disconnected (code: ${code})`);
   });
 
   ws.on("error", (error) => {
@@ -91,6 +126,7 @@ function setupWsEventHandlers(ws, subdomain) {
 
   ws.on("pong", () => {
     // This will be handled by the tunnel object
+    console.log(`💓 Received pong from ${subdomain} (connection active)`);
   });
 
   ws.on("message", (data, isBinary) => {

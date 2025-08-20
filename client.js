@@ -211,7 +211,7 @@ setInterval(() => {
       console.error('❌ Failed to send ping:', error.message);
     }
   }
-}, 25000); // Send ping every 25 seconds
+}, 20000); // Send ping every 20 seconds (matches server)
 
 /**
  * Handle messages from the tunnel server

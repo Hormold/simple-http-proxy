@@ -21,10 +21,10 @@ export const MAX_WS_BUFFER = 10 * 1024 * 1024;
 export const RESUME_WS_BUFFER = 1 * 1024 * 1024;
 
 /** @type {number} Client ping interval in milliseconds */
-export const CLIENT_PING_INTERVAL = 25000; // 25 seconds (matches client interval)
+export const CLIENT_PING_INTERVAL = 20000; // 20 seconds
 
 /** @type {number} Client ping timeout in milliseconds */
-export const CLIENT_PING_TIMEOUT = 90000; // 90 seconds (allows 3 missed pings)
+export const CLIENT_PING_TIMEOUT = 300000; // 5 minutes (very generous)
 
 /** @type {Set<string>} Hop-by-hop headers that should be filtered out */
 export const HOP_BY_HOP_HEADERS = new Set([
