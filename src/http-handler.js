@@ -26,7 +26,7 @@ export function handleHttpRequest(req, res) {
   // Health check and metrics endpoints - only for root domain
   if (!subdomain && req.url) {
     if (req.url === "/api/status" || req.url === "/") {
-      handleStatusRequest(req, res);
+      handleStatusRequest(req, res, startTime);
       return;
     }
     if (req.url === "/api/metrics") {
@@ -89,8 +89,9 @@ export function handleHttpRequest(req, res) {
  * Handle status/health check requests
  * @param {http.IncomingMessage} req - HTTP request object
  * @param {http.ServerResponse} res - HTTP response object
+ * @param {number} startTime - Request start time
  */
-function handleStatusRequest(req, res) {
+function handleStatusRequest(req, res, startTime) {
 
   const body = JSON.stringify({
     ok: true,
