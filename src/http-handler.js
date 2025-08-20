@@ -3,7 +3,7 @@
  */
 
 import { filterHeaders, safeSend } from "./utils.js";
-import { getTunnel, registerRequest, unregisterRequest, generateRequestId, getActiveSubdomains } from "./tunnel.js";
+import { getTunnel, registerRequest, unregisterRequest, generateRequestId } from "./tunnel.js";
 import { MAX_WS_BUFFER, RESUME_WS_BUFFER } from "./constants.js";
 
 /**
@@ -83,8 +83,7 @@ function handleStatusRequest(req, res) {
   const body = JSON.stringify({
     ok: true,
     domain: process.env.PUBLIC_DOMAIN || "aimodelproxy.com",
-    wsPath: process.env.WS_PATH || "/_ws/tunnel",
-    activeTunnels: getActiveSubdomains()
+    wsPath: process.env.WS_PATH || "/_ws/tunnel"
   });
 
   res.writeHead(200, { "content-type": "application/json" });
