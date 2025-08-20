@@ -170,12 +170,12 @@ export function extractSubdomain(host) {
 
   const sanitizedHost = sanitizeString(host, 256);
   const bare = sanitizedHost.split(":")[0].toLowerCase();
-  const suffix = "." + DEFAULT_PUBLIC_DOMAIN.toLowerCase();
+  const publicDomain = DEFAULT_PUBLIC_DOMAIN.toLowerCase();
 
-  if (bare === DEFAULT_PUBLIC_DOMAIN.toLowerCase()) return null;
-  if (!bare.endsWith(suffix)) return null;
+  if (bare === publicDomain) return null;
+  if (!bare.endsWith("." + publicDomain)) return null;
 
-  const subdomain = bare.slice(0, -suffix.length);
+  const subdomain = bare.slice(0, -(publicDomain.length + 1));
 
   // Validate extracted subdomain
   if (!subdomain || subdomain.length < 3) {
