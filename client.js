@@ -190,6 +190,29 @@ ws.on('error', (error) => {
   process.exit(1);
 });
 
+// Handle ping from server
+ws.on('ping', () => {
+  console.log('💓 Received ping from server, sending pong');
+  // WebSocket library automatically sends pong, but let's log it
+});
+
+// Handle pong from server
+ws.on('pong', () => {
+  console.log('💓 Received pong from server');
+});
+
+// Keepalive mechanism - send ping to server
+setInterval(() => {
+  if (ws.readyState === ws.OPEN) {
+    try {
+      ws.ping();
+      console.log('💓 Sent ping to server');
+    } catch (error) {
+      console.error('❌ Failed to send ping:', error.message);
+    }
+  }
+}, 25000); // Send ping every 25 seconds
+
 /**
  * Handle messages from the tunnel server
  */
