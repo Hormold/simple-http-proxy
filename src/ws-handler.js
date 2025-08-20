@@ -125,8 +125,13 @@ function setupWsEventHandlers(ws, subdomain) {
   });
 
   ws.on("pong", () => {
-    // This will be handled by the tunnel object
-    console.log(`💓 Received pong from ${subdomain} (connection active)`);
+    // Update tunnel's lastPongAt timestamp
+    const tunnels = getTunnels();
+    const tunnel = tunnels.get(subdomain);
+    if (tunnel) {
+      tunnel.lastPongAt = Date.now();
+      console.log(`💓 Received pong from ${subdomain} (connection active)`);
+    }
   });
 
   ws.on("message", (data, isBinary) => {
