@@ -15,16 +15,19 @@ export function handleHttpRequest(req, res) {
   const host = req.headers["host"] || "";
   const isHttps = req.socket.encrypted ? true : false;
 
-  // Health check endpoint
-  if (req.url && (req.url === "/api/status" || req.url === "/")) {
+  // Extract subdomain from host
+  const subdomain = extractSubdomainFromHost(host);
+
+  // Health check endpoint - only for root domain
+  if (!subdomain && req.url && (req.url === "/api/status" || req.url === "/")) {
     handleStatusRequest(req, res);
     return;
   }
 
-  // Extract subdomain from host
-  const subdomain = extractSubdomainFromHost(host);
+  // If no subdomain found, return 404
   if (!subdomain) {
-    send404Response(res, "no tunnel matched; use subdomain." + process.env.PUBLIC_DOMAIN || "aimodelproxy.com");
+    const publicDomain = process.env.PUBLIC_DOMAIN || "aimodelproxy.com";
+    send404Response(res, `no tunnel matched; use subdomain.${publicDomain}`);
     return;
   }
 
