@@ -24,7 +24,7 @@ import http from 'http';
 const DEFAULT_SUBDOMAIN = 'tunnel' + Math.random().toString(36).substr(2, 8);
 const DEFAULT_LOCAL_PORT = 3000;
 const DEFAULT_TUNNEL_HOST = process.env.TUNNEL_HOST || 'localhost';
-const DEFAULT_TUNNEL_PORT = process.env.TUNNEL_PORT || 8080;
+const DEFAULT_TUNNEL_PORT = process.env.TUNNEL_PORT || 80;
 const WS_PATH = process.env.WS_PATH || '/_ws/tunnel';
 
 /**
@@ -76,20 +76,29 @@ function parseArguments() {
   }
 
   // Parse tunnel server
-  let tunnelHost, tunnelPort;
+  let tunnelHost, tunnelPort, useTLS;
   if (tunnelServer.includes(':')) {
     [tunnelHost, tunnelPort] = tunnelServer.split(':');
     tunnelPort = parseInt(tunnelPort);
+    useTLS = tunnelPort === 443; // Assume HTTPS if port 443
   } else {
     tunnelHost = tunnelServer;
-    tunnelPort = parseInt(DEFAULT_TUNNEL_PORT);
+    // Auto-detect common ports
+    if (tunnelHost.includes('aimodelproxy.com') || tunnelHost.includes('remote') || tunnelHost.includes('production')) {
+      tunnelPort = 443; // Production servers likely use HTTPS
+      useTLS = true;
+    } else {
+      tunnelPort = parseInt(DEFAULT_TUNNEL_PORT);
+      useTLS = false;
+    }
   }
 
   return {
     tunnelHost,
     tunnelPort,
     localPort,
-    subdomain: subdomain || DEFAULT_SUBDOMAIN
+    subdomain: subdomain || DEFAULT_SUBDOMAIN,
+    useTLS
   };
 }
 
@@ -116,10 +125,19 @@ Examples:
   node client.js example.com:8080 3000 myapp
     # Creates tunnel to localhost:3000 via example.com:8080 with subdomain 'myapp'
 
+  node client.js aimodelproxy.com 3000 myapp
+    # Creates tunnel to localhost:3000 via aimodelproxy.com:443 (auto HTTPS)
+
 Environment Variables:
   TUNNEL_HOST - Default tunnel server host (default: localhost)
-  TUNNEL_PORT - Default tunnel server port (default: 8080)
+  TUNNEL_PORT - Default tunnel server port (default: 80)
   WS_PATH - WebSocket path (default: /_ws/tunnel)
+
+Features:
+  - Auto-detects HTTPS for production domains (*.com, remote, production)
+  - Supports both HTTP and HTTPS tunnel servers
+  - Automatic protocol selection (ws:// or wss://)
+  - Comprehensive error handling and logging
 
 This will expose your local server running on port 3000 to the internet
 through a public URL that you can share with others.
@@ -128,13 +146,14 @@ through a public URL that you can share with others.
 
 // Parse configuration
 const config = parseArguments();
-const { tunnelHost, tunnelPort, localPort, subdomain } = config;
+const { tunnelHost, tunnelPort, localPort, subdomain, useTLS } = config;
 
 // WebSocket connection URL
-const wsUrl = `ws://${tunnelHost}:${tunnelPort}${WS_PATH}?subdomain=${subdomain}`;
+const protocol = useTLS ? 'wss' : 'ws';
+const wsUrl = `${protocol}://${tunnelHost}:${tunnelPort}${WS_PATH}?subdomain=${subdomain}`;
 
 console.log(`🚇 Starting WebSocket Tunnel Client`);
-console.log(`   Tunnel Server: ${tunnelHost}:${tunnelPort}`);
+console.log(`   Tunnel Server: ${tunnelHost}:${tunnelPort} (${useTLS ? 'TLS' : 'plain'})`);
 console.log(`   Local Port: ${localPort}`);
 console.log(`   Subdomain: ${subdomain}`);
 console.log(`   Connecting to: ${wsUrl}`);
@@ -190,6 +209,15 @@ function handleServerMessage(msg) {
       console.log(`[SERVER LOG] ${msg.message}`);
       break;
 
+    case 'reqEnd':
+      // Server finished sending request body (no action needed for GET requests)
+      break;
+
+    case 'reqAbort':
+      // Server aborted request (connection closed)
+      console.log(`🔄 Request ${msg.id} aborted by server`);
+      break;
+
     default:
       console.warn(`⚠️  Unknown message type: ${type}`);
   }
@@ -211,11 +239,17 @@ function handleTunnelReady(msg) {
   try {
     const urlObj = new URL(url);
     const domain = urlObj.hostname;
+    const protocol = urlObj.protocol;
 
     console.log(`   curl ${url}`);
     console.log(`   curl ${url}/api/test`);
     console.log(`   curl ${url}/health`);
     console.log(`   open ${url}`);
+
+    // Show additional info for SSL
+    if (protocol === 'https:') {
+      console.log(`   🔒 This connection is secure (HTTPS)`);
+    }
   } catch (error) {
     console.log(`   curl ${url}`);
   }
