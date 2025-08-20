@@ -7,6 +7,7 @@
 import http from "http";
 import https from "https";
 import fs from "fs";
+import compression from "compression";
 import { WebSocketServer } from "ws";
 import { handleHttpRequest } from "./http-handler.js";
 import { handleWsConnection } from "./ws-handler.js";
@@ -25,15 +26,35 @@ function makeServer() {
   const keyPath = process.env.TLS_KEY_PATH;
   const certPath = process.env.TLS_CERT_PATH;
 
+  // Create compression middleware
+  const compressMiddleware = compression({
+    level: 6, // Good balance between speed and compression
+    threshold: 1024, // Only compress responses > 1KB
+    filter: (req, res) => {
+      // Don't compress WebSocket upgrades
+      if (req.headers['upgrade'] === 'websocket') {
+        return false;
+      }
+      return compression.filter(req, res);
+    }
+  });
+
+  // Combined request handler with compression
+  const requestHandler = (req, res) => {
+    compressMiddleware(req, res, () => {
+      handleHttpRequest(req, res);
+    });
+  };
+
   if (keyPath && certPath && fs.existsSync(keyPath) && fs.existsSync(certPath)) {
     const creds = {
       key: fs.readFileSync(keyPath),
       cert: fs.readFileSync(certPath)
     };
-    return https.createServer(creds, handleHttpRequest);
+    return https.createServer(creds, requestHandler);
   }
 
-  return http.createServer(handleHttpRequest);
+  return http.createServer(requestHandler);
 }
 
 /**
@@ -46,6 +67,12 @@ function startServer() {
   const wsPath = process.env.WS_PATH || DEFAULT_WS_PATH;
 
   const server = makeServer();
+
+  // Configure server for better performance
+  server.keepAliveTimeout = 60000; // 60 seconds
+  server.headersTimeout = 65000; // Slightly higher than keepAliveTimeout
+  server.maxRequestsPerSocket = 0; // Unlimited requests per connection
+  server.timeout = 120000; // 2 minutes
 
   // Attach WebSocket server
   const wss = new WebSocketServer({ noServer: true });

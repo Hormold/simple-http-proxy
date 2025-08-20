@@ -5,6 +5,7 @@
 import { filterHeaders, safeSend } from "./utils.js";
 import { getTunnel, registerRequest, unregisterRequest, generateRequestId } from "./tunnel.js";
 import { MAX_WS_BUFFER, RESUME_WS_BUFFER } from "./constants.js";
+import { metrics } from "./logger.js";
 
 /**
  * Handle incoming HTTP requests
@@ -12,22 +13,33 @@ import { MAX_WS_BUFFER, RESUME_WS_BUFFER } from "./constants.js";
  * @param {http.ServerResponse} res - HTTP response object
  */
 export function handleHttpRequest(req, res) {
+  const startTime = Date.now();
   const host = req.headers["host"] || "";
   const isHttps = req.socket.encrypted ? true : false;
+
+  // Record request
+  metrics.recordRequest();
 
   // Extract subdomain from host
   const subdomain = extractSubdomainFromHost(host);
 
-  // Health check endpoint - only for root domain
-  if (!subdomain && req.url && (req.url === "/api/status" || req.url === "/")) {
-    handleStatusRequest(req, res);
-    return;
+  // Health check and metrics endpoints - only for root domain
+  if (!subdomain && req.url) {
+    if (req.url === "/api/status" || req.url === "/") {
+      handleStatusRequest(req, res);
+      return;
+    }
+    if (req.url === "/api/metrics") {
+      handleMetricsRequest(req, res, startTime);
+      return;
+    }
   }
 
   // If no subdomain found, return 404
   if (!subdomain) {
     const publicDomain = process.env.PUBLIC_DOMAIN || "aimodelproxy.com";
     send404Response(res, `no tunnel matched; use subdomain.${publicDomain}`);
+    metrics.recordError();
     return;
   }
 
@@ -88,6 +100,37 @@ function handleStatusRequest(req, res) {
 
   res.writeHead(200, { "content-type": "application/json" });
   res.end(body);
+
+  // Record response metrics
+  const responseTime = Date.now() - startTime;
+  metrics.recordResponse(responseTime);
+}
+
+/**
+ * Handle metrics request
+ * @param {http.IncomingMessage} req - HTTP request object
+ * @param {http.ServerResponse} res - HTTP response object
+ * @param {number} startTime - Request start time
+ */
+function handleMetricsRequest(req, res, startTime) {
+  const stats = metrics.getStats();
+
+  const body = JSON.stringify({
+    ...stats,
+    memory: process.memoryUsage(),
+    uptime: process.uptime(),
+    nodeVersion: process.version
+  }, null, 2);
+
+  res.writeHead(200, {
+    "content-type": "application/json",
+    "cache-control": "no-cache"
+  });
+  res.end(body);
+
+  // Record response metrics
+  const responseTime = Date.now() - startTime;
+  metrics.recordResponse(responseTime);
 }
 
 /**

@@ -48,6 +48,60 @@ function formatLogMessage(level, message, meta = {}) {
 }
 
 /**
+ * Performance metrics
+ */
+class PerformanceMetrics {
+  constructor() {
+    this.reset();
+  }
+
+  reset() {
+    this.requests = 0;
+    this.responses = 0;
+    this.errors = 0;
+    this.avgResponseTime = 0;
+    this.responseTimes = [];
+    this.startTime = Date.now();
+  }
+
+  recordRequest() {
+    this.requests++;
+  }
+
+  recordResponse(responseTime) {
+    this.responses++;
+    this.responseTimes.push(responseTime);
+
+    // Keep only last 100 response times for avg calculation
+    if (this.responseTimes.length > 100) {
+      this.responseTimes.shift();
+    }
+
+    // Calculate rolling average
+    this.avgResponseTime = this.responseTimes.reduce((a, b) => a + b, 0) / this.responseTimes.length;
+  }
+
+  recordError() {
+    this.errors++;
+  }
+
+  getStats() {
+    const uptime = Date.now() - this.startTime;
+    return {
+      requests: this.requests,
+      responses: this.responses,
+      errors: this.errors,
+      avgResponseTime: Math.round(this.avgResponseTime * 100) / 100,
+      uptime: uptime,
+      requestsPerSecond: uptime > 0 ? Math.round((this.requests / uptime) * 1000 * 100) / 100 : 0
+    };
+  }
+}
+
+// Global performance metrics
+const metrics = new PerformanceMetrics();
+
+/**
  * Logger class with different log levels
  */
 class Logger {
@@ -122,6 +176,9 @@ class Logger {
 
 // Export singleton logger instance
 export const logger = new Logger();
+
+// Export performance metrics
+export { metrics };
 
 // Export class for creating custom loggers
 export { Logger };
