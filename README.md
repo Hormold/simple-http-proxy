@@ -286,12 +286,22 @@ The server is optimized for high performance with:
 - **Smart Buffer Management**: Prevents memory exhaustion
 - **Connection Pooling**: Efficient WebSocket connection handling
 - **Metrics Collection**: Real-time performance monitoring
+- **Ping/Pong Keepalive**: Bidirectional heartbeat mechanism
 
 Typical performance:
 - **API Response Time**: 10-15ms (without compression)
 - **Throughput**: 1000+ requests/second
 - **Memory Usage**: Minimal, with smart garbage collection
 - **Connection Handling**: 10,000+ concurrent connections
+
+## Keepalive Mechanism
+
+Both server and client implement WebSocket ping/pong for connection health:
+
+- **Server → Client**: Ping every 25 seconds, timeout after 90 seconds
+- **Client → Server**: Ping every 25 seconds, automatic pong responses
+- **Connection Monitoring**: Real-time logging of ping/pong activity
+- **Graceful Cleanup**: Proper connection termination on failures
 
 ## Security Considerations
 

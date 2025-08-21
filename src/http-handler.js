@@ -163,12 +163,12 @@ function handleRequestBody(req, tunnel, id) {
   let pausedForWsBuffer = false;
 
   const maybePause = () => {
-    if (!pausedForWsBuffer && tunnel.ws.bufferedAmount > MAX_WS_BUFFER) {
+    if (!pausedForWsBuffer && tunnel.ws && tunnel.ws.bufferedAmount > MAX_WS_BUFFER) {
       pausedForWsBuffer = true;
       req.pause();
 
       const iv = setInterval(() => {
-        if (tunnel.ws.readyState !== tunnel.ws.OPEN) {
+        if (!tunnel.ws || tunnel.ws.readyState !== tunnel.ws.OPEN) {
           clearInterval(iv);
           return;
         }

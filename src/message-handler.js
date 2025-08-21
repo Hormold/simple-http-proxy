@@ -5,6 +5,7 @@
 import { getTunnel, getRequestState, unregisterRequest } from "./tunnel.js";
 import { safeEndHttpWith502 } from "./utils.js";
 import { sanitizeResponseHeaders } from "./utils.js";
+import http from "http";
 
 /**
  * Handle message from WebSocket client
@@ -164,6 +165,152 @@ function handleLogMessage(msg, subdomain) {
   // Optional logging from client - could be useful for debugging
   if (msg.level && msg.message) {
     console.log(`[client:${subdomain}] ${msg.level.toUpperCase()}: ${msg.message}`);
+  }
+}
+
+/**
+ * Handle HTTP request message
+ * @param {Object} msg - Request message
+ * @param {Object} tunnel - Tunnel object
+ * @param {string} id - Request ID
+ */
+function handleRequest(msg, tunnel, id) {
+  const { method, path, httpVersion, headers } = msg;
+
+  try {
+    // For this tunnel-based proxy, we don't create HTTP requests ourselves.
+    // Instead, we store the request information and wait for the client
+    // to process it and send back a response through WebSocket messages.
+    // The actual HTTP request handling should be done by the client application.
+
+    console.log(`[tunnel] Received HTTP request ${id}: ${method} ${path}`);
+
+    // Store request state for body handling
+    if (!tunnel.activeRequests) tunnel.activeRequests = new Map();
+    tunnel.activeRequests.set(id, {
+      method,
+      path,
+      headers,
+      bodyBuffer: [],
+      bodySize: 0,
+      startTime: Date.now()
+    });
+
+    // If this is a GET request with no body expected, we might want to
+    // immediately process it or wait for client response
+    // For now, we'll wait for the client to send a response
+
+  } catch (error) {
+    console.error(`[tunnel] Failed to handle HTTP request ${id}:`, error.message);
+    const errorMsg = {
+      type: "res",
+      id,
+      status: 500,
+      headers: { "content-type": "text/plain" }
+    };
+    tunnel.ws.send(JSON.stringify(errorMsg));
+
+    const bodyMsg = {
+      type: "resBody",
+      id,
+      chunk: Buffer.from("Internal Server Error").toString('base64')
+    };
+    tunnel.ws.send(JSON.stringify(bodyMsg));
+
+    const endMsg = { type: "resEnd", id };
+    tunnel.ws.send(JSON.stringify(endMsg));
+  }
+}
+
+/**
+ * Handle request body chunk
+ * @param {Object} msg - Request body message
+ * @param {Object} tunnel - Tunnel object
+ * @param {string} id - Request ID
+ */
+function handleRequestBody(msg, tunnel, id) {
+  if (!tunnel.activeRequests) return;
+
+  const state = tunnel.activeRequests.get(id);
+  if (!state) return;
+
+  try {
+    const chunk = Buffer.from(msg.chunk || "", "base64");
+    if (!chunk.length) return;
+
+    // Buffer the chunk for later sending
+    state.bodyBuffer.push(chunk);
+    state.bodySize += chunk.length;
+
+    // Prevent memory issues with very large requests
+    if (state.bodySize > 50 * 1024 * 1024) { // 50MB limit
+      console.warn(`[tunnel] Request body too large for ${id}, aborting`);
+      state.req.destroy(new Error("Request body too large"));
+      tunnel.activeRequests.delete(id);
+      return;
+    }
+  } catch (error) {
+    console.error(`[tunnel] Failed to process request body for ${id}:`, error.message);
+    if (state.req) state.req.destroy(error);
+    tunnel.activeRequests.delete(id);
+  }
+}
+
+/**
+ * Handle request end message
+ * @param {Object} tunnel - Tunnel object
+ * @param {string} id - Request ID
+ */
+function handleRequestEnd(tunnel, id) {
+  if (!tunnel.activeRequests) return;
+
+  const state = tunnel.activeRequests.get(id);
+  if (!state) return;
+
+  try {
+    // Log request completion
+    const duration = Date.now() - state.startTime;
+    console.log(`[tunnel] HTTP request ${id} completed in ${duration}ms`);
+
+    // Combine all body chunks for logging/debugging
+    if (state.bodyBuffer.length > 0) {
+      const fullBody = Buffer.concat(state.bodyBuffer);
+      console.log(`[tunnel] Request ${id} body size: ${fullBody.length} bytes`);
+    }
+
+    // In a real implementation, you might want to process the request here
+    // and send a response back through the tunnel
+
+    // For now, just clean up
+    tunnel.activeRequests.delete(id);
+
+  } catch (error) {
+    console.error(`[tunnel] Failed to end HTTP request for ${id}:`, error.message);
+    tunnel.activeRequests.delete(id);
+  }
+}
+
+/**
+ * Handle request abort message
+ * @param {Object} tunnel - Tunnel object
+ * @param {string} id - Request ID
+ */
+function handleRequestAbort(tunnel, id) {
+  if (!tunnel.activeRequests) return;
+
+  const state = tunnel.activeRequests.get(id);
+  if (!state) return;
+
+  try {
+    // Log request abortion
+    const duration = Date.now() - state.startTime;
+    console.log(`[tunnel] HTTP request ${id} aborted after ${duration}ms`);
+
+    // Clean up
+    tunnel.activeRequests.delete(id);
+
+  } catch (error) {
+    console.error(`[tunnel] Failed to abort HTTP request for ${id}:`, error.message);
   }
 }
 
