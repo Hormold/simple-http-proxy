@@ -164,6 +164,11 @@ const ws = new WebSocket(wsUrl);
 // Store active requests
 const activeRequests = new Map();
 
+/**
+ * Store request state including body chunks
+ */
+const requestStates = new Map();
+
 ws.on('open', () => {
   console.log('✅ Connected to tunnel server');
 });
@@ -228,17 +233,21 @@ function handleServerMessage(msg) {
       handleHttpRequest(msg);
       break;
 
-    case 'log':
-      console.log(`[SERVER LOG] ${msg.message}`);
+    case 'reqBody':
+      handleRequestBody(msg);
       break;
 
     case 'reqEnd':
-      // Server finished sending request body (no action needed for GET requests)
+      handleRequestEnd(msg);
       break;
 
     case 'reqAbort':
       // Server aborted request (connection closed)
       console.log(`🔄 Request ${msg.id} aborted by server`);
+      break;
+
+    case 'log':
+      console.log(`[SERVER LOG] ${msg.message}`);
       break;
 
     default:
@@ -289,23 +298,88 @@ async function handleHttpRequest(msg) {
   // Show request info (but not too verbose)
   console.log(`📨 ${method} ${path}`);
 
+  // Initialize request state for storing body chunks
+  requestStates.set(id, {
+    method,
+    path,
+    headers,
+    bodyChunks: []
+  });
+
+  // For GET requests or requests without body, process immediately
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+    await processCompleteRequest(id);
+  }
+}
+
+/**
+ * Handle request body chunk from server
+ */
+function handleRequestBody(msg) {
+  const { id, chunk } = msg;
+  const state = requestStates.get(id);
+
+  if (!state) {
+    console.warn(`⚠️  Received reqBody for unknown request: ${id}`);
+    return;
+  }
+
+  // Decode base64 chunk and store it
+  const bodyChunk = Buffer.from(chunk, 'base64');
+  state.bodyChunks.push(bodyChunk);
+}
+
+/**
+ * Handle end of request body from server
+ */
+async function handleRequestEnd(msg) {
+  const { id } = msg;
+
+  if (!requestStates.has(id)) {
+    console.warn(`⚠️  Received reqEnd for unknown request: ${id}`);
+    return;
+  }
+
+  // Process the complete request with body
+  await processCompleteRequest(id);
+}
+
+/**
+ * Process complete request with accumulated body
+ */
+async function processCompleteRequest(id) {
+  const state = requestStates.get(id);
+
+  if (!state) {
+    console.warn(`⚠️  Cannot process unknown request: ${id}`);
+    return;
+  }
+
+  // Combine all body chunks
+  const body = state.bodyChunks.length > 0 ? Buffer.concat(state.bodyChunks) : null;
+
   // Prepare request to local server
   const requestOptions = {
     hostname: 'localhost',
     port: localPort,
-    path: path,
-    method: method,
+    path: state.path,
+    method: state.method,
     headers: {
-      ...headers,
-      'X-Forwarded-Host': headers.host,
+      ...state.headers,
+      'X-Forwarded-Host': state.headers.host,
       'X-Real-IP': '127.0.0.1',
       'X-Forwarded-Proto': 'http'
     }
   };
 
+  // Add content-length header if we have a body
+  if (body && body.length > 0) {
+    requestOptions.headers['Content-Length'] = body.length;
+  }
+
   try {
     // Make request to local server
-    const response = await makeRequestToLocalServer(requestOptions, id);
+    const response = await makeRequestToLocalServer(requestOptions, id, body);
 
     if (response) {
       // Send response back through tunnel
@@ -315,13 +389,16 @@ async function handleHttpRequest(msg) {
   } catch (error) {
     console.error(`❌ Error handling request ${id}:`, error.message);
     sendErrorResponse(id, 502, 'Bad Gateway');
+  } finally {
+    // Clean up request state
+    requestStates.delete(id);
   }
 }
 
 /**
  * Make HTTP request to local server
  */
-function makeRequestToLocalServer(options, requestId) {
+function makeRequestToLocalServer(options, requestId, body = null) {
   return new Promise((resolve, reject) => {
     const req = http.request(options, (res) => {
       const chunks = [];
@@ -331,11 +408,11 @@ function makeRequestToLocalServer(options, requestId) {
       });
 
       res.on('end', () => {
-        const body = Buffer.concat(chunks);
+        const responseBody = Buffer.concat(chunks);
         resolve({
           statusCode: res.statusCode,
           headers: res.headers,
-          body: body
+          body: responseBody
         });
       });
 
@@ -353,6 +430,11 @@ function makeRequestToLocalServer(options, requestId) {
       req.abort();
       reject(new Error('Request timeout'));
     });
+
+    // Send request body if provided
+    if (body && body.length > 0) {
+      req.write(body);
+    }
 
     req.end();
   });

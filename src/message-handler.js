@@ -26,6 +26,22 @@ export function handleClientMessage(msg, subdomain) {
   }
 
   switch (type) {
+    case "req":
+      handleRequest(msg, tunnel, id);
+      break;
+
+    case "reqBody":
+      handleRequestBody(msg, tunnel, id);
+      break;
+
+    case "reqEnd":
+      handleRequestEnd(tunnel, id);
+      break;
+
+    case "reqAbort":
+      handleRequestAbort(tunnel, id);
+      break;
+
     case "res":
       handleResponse(msg, tunnel, id);
       break;
