@@ -378,12 +378,11 @@ async function processCompleteRequest(id) {
   }
 
   try {
-    // Make request to local server
-    const response = await makeRequestToLocalServer(requestOptions, id, body);
+    // Make request to local server with streaming
+    const success = await makeRequestToLocalServer(requestOptions, id, body);
 
-    if (response) {
-      // Send response back through tunnel
-      sendResponse(id, response);
+    if (!success) {
+      console.warn(`⚠️  Failed to process request ${id}`);
     }
 
   } catch (error) {
@@ -396,33 +395,52 @@ async function processCompleteRequest(id) {
 }
 
 /**
- * Make HTTP request to local server
+ * Make HTTP request to local server with streaming support
  */
 function makeRequestToLocalServer(options, requestId, body = null) {
   return new Promise((resolve, reject) => {
     const req = http.request(options, (res) => {
-      const chunks = [];
+      // Send response headers immediately
+      const resMsg = {
+        type: 'res',
+        id: requestId,
+        status: res.statusCode,
+        headers: res.headers
+      };
+      ws.send(JSON.stringify(resMsg));
 
+      // Stream response chunks immediately as they arrive
       res.on('data', (chunk) => {
-        chunks.push(chunk);
+        const bodyMsg = {
+          type: 'resBody',
+          id: requestId,
+          chunk: chunk.toString('base64')
+        };
+        ws.send(JSON.stringify(bodyMsg));
       });
 
       res.on('end', () => {
-        const responseBody = Buffer.concat(chunks);
-        resolve({
-          statusCode: res.statusCode,
-          headers: res.headers,
-          body: responseBody
-        });
+        // Send response end
+        const endMsg = {
+          type: 'resEnd',
+          id: requestId
+        };
+        ws.send(JSON.stringify(endMsg));
+        resolve(true); // Indicate success without buffering body
       });
 
-      res.on('error', reject);
+      res.on('error', (error) => {
+        console.error(`❌ Response error for ${requestId}:`, error.message);
+        reject(error);
+      });
     });
 
     req.on('error', (error) => {
       // Local server is not available
       console.warn(`⚠️  Local server not available on port ${localPort}`);
-      resolve(null);
+      // Send 502 error response
+      sendErrorResponse(requestId, 502, 'Local server unavailable');
+      resolve(false);
     });
 
     // Set timeout
@@ -441,43 +459,9 @@ function makeRequestToLocalServer(options, requestId, body = null) {
 }
 
 /**
- * Send HTTP response back through tunnel
+ * Send HTTP response back through tunnel (DEPRECATED - now using streaming in makeRequestToLocalServer)
+ * This function is kept for error responses only
  */
-function sendResponse(id, response) {
-  // Send response headers
-  const resMsg = {
-    type: 'res',
-    id: id,
-    status: response.statusCode,
-    headers: response.headers
-  };
-
-  ws.send(JSON.stringify(resMsg));
-
-  // Send response body in chunks
-  if (response.body && response.body.length > 0) {
-    const chunkSize = 8192; // 8KB chunks
-
-    for (let i = 0; i < response.body.length; i += chunkSize) {
-      const chunk = response.body.slice(i, i + chunkSize);
-      const bodyMsg = {
-        type: 'resBody',
-        id: id,
-        chunk: chunk.toString('base64')
-      };
-
-      ws.send(JSON.stringify(bodyMsg));
-    }
-  }
-
-  // Send response end
-  const endMsg = {
-    type: 'resEnd',
-    id: id
-  };
-
-  ws.send(JSON.stringify(endMsg));
-}
 
 /**
  * Send error response
